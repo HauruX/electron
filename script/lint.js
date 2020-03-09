@@ -53,10 +53,14 @@ function cpplint (args) {
   }
 }
 
+function isObjCHeader (filename) {
+  return /\/(mac|cocoa)\//.test(filename)
+}
+
 const LINTERS = [ {
   key: 'c++',
   roots: ['shell', 'native_mate'],
-  test: filename => filename.endsWith('.cc') || filename.endsWith('.h'),
+  test: filename => filename.endsWith('.cc') || (filename.endsWith('.h') && !isObjCHeader(filename)),
   run: (opts, filenames) => {
     if (opts.fix) {
       spawnAndCheckExitCode('python', ['script/run-clang-format.py', '--fix', ...filenames])
@@ -269,8 +273,8 @@ async function main () {
   const opts = parseCommandLine()
 
   // no mode specified? run 'em all
-  if (!opts['c++'] && !opts.javascript && !opts.python && !opts.gn && !opts.patches) {
-    opts['c++'] = opts.javascript = opts.python = opts.gn = opts.patches = true
+  if (!opts['c++'] && !opts.javascript && !opts.objc && !opts.python && !opts.gn && !opts.patches) {
+    opts['c++'] = opts.javascript = opts.objc = opts.python = opts.gn = opts.patches = true
   }
 
   const linters = LINTERS.filter(x => opts[x.key])

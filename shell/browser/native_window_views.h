@@ -105,7 +105,7 @@ class NativeWindowViews : public NativeWindow,
   void SetIgnoreMouseEvents(bool ignore, bool forward) override;
   void SetContentProtection(bool enable) override;
   void SetFocusable(bool focusable) override;
-  void SetMenu(AtomMenuModel* menu_model) override;
+  void SetMenu(ElectronMenuModel* menu_model) override;
   void AddBrowserView(NativeBrowserView* browser_view) override;
   void RemoveBrowserView(NativeBrowserView* browser_view) override;
   void SetParentWindow(NativeWindow* parent) override;
@@ -272,6 +272,9 @@ class NativeWindowViews : public NativeWindow,
 
   // Set to true if the window is always on top and behind the task bar.
   bool behind_task_bar_ = false;
+
+  // Whether to block Chromium from handling window messages.
+  bool block_chromium_message_handler_ = false;
 #endif
 
   // Handles unhandled keyboard messages coming back from the renderer process.

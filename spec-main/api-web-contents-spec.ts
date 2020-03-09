@@ -104,24 +104,46 @@ describe('webContents module', () => {
   })
 
   ifdescribe(features.isPrintingEnabled())('webContents.print()', () => {
+    let w: BrowserWindow
+
+    beforeEach(() => {
+      w = new BrowserWindow({ show: false })
+    })
+
     afterEach(closeAllWindows)
+
     it('throws when invalid settings are passed', () => {
-      const w = new BrowserWindow({ show: false })
       expect(() => {
         // @ts-ignore this line is intentionally incorrect
         w.webContents.print(true)
       }).to.throw('webContents.print(): Invalid print settings specified.')
+    })
 
+    it('throws when an invalid callback is passed', () => {
       expect(() => {
         // @ts-ignore this line is intentionally incorrect
         w.webContents.print({}, true)
       }).to.throw('webContents.print(): Invalid optional callback provided.')
     })
 
-    it('does not crash', () => {
-      const w = new BrowserWindow({ show: false })
+    ifit(process.platform !== 'linux')('throws when an invalid deviceName is passed', () => {
       expect(() => {
-        w.webContents.print({ silent: true })
+        w.webContents.print({ deviceName: 'i-am-a-nonexistent-printer' }, () => {})
+      }).to.throw('webContents.print(): Invalid deviceName provided.')
+    })
+
+    it('does not crash with custom margins', () => {
+      expect(() => {
+        w.webContents.print({
+          silent: true,
+          margins: {
+            marginType: 'custom',
+            top: 1,
+            bottom: 1,
+            left: 1,
+            right: 1
+          }
+        })
       }).to.not.throw()
     })
   })
@@ -1409,17 +1431,16 @@ describe('webContents module', () => {
     })
   })
 
-  // TODO(deepak1556): Fix and enable after upgrade.
   ifdescribe(features.isPrintingEnabled())('printToPDF()', () => {
     afterEach(closeAllWindows)
-    it.skip('can print to PDF', async () => {
+    it('can print to PDF', async () => {
       const w = new BrowserWindow({ show: false, webPreferences: { sandbox: true } })
       await w.loadURL('data:text/html,<h1>Hello, World!</h1>')
       const data = await w.webContents.printToPDF({})
       expect(data).to.be.an.instanceof(Buffer).that.is.not.empty()
     })
 
-    it.skip('does not crash when called multiple times', async () => {
+    it('does not crash when called multiple times', async () => {
       const w = new BrowserWindow({ show: false, webPreferences: { sandbox: true } })
       await w.loadURL('data:text/html,<h1>Hello, World!</h1>')
       const promises = []

@@ -19,13 +19,6 @@
 #include "shell/common/options_switches.h"
 
 namespace electron {
-
-namespace {
-
-int64_t g_request_id = 0;
-
-}  // namespace
-
 ProxyingURLLoaderFactory::InProgressRequest::FollowRedirectParams::
     FollowRedirectParams() = default;
 ProxyingURLLoaderFactory::InProgressRequest::FollowRedirectParams::
@@ -94,7 +87,9 @@ void ProxyingURLLoaderFactory::InProgressRequest::UpdateRequestInfo() {
   request_for_info.request_initiator = original_initiator_;
   info_.emplace(extensions::WebRequestInfoInitParams(
       request_id_, factory_->render_process_id_, request_.render_frame_id,
-      nullptr, routing_id_, request_for_info, false,
+      factory_->navigation_ui_data_ ? factory_->navigation_ui_data_->DeepCopy()
+                                    : nullptr,
+      routing_id_, request_for_info, false,
       !(options_ & network::mojom::kURLLoadOptionSynchronous),
       factory_->IsForServiceWorkerScript(), factory_->navigation_id_));
 
@@ -303,7 +298,7 @@ void ProxyingURLLoaderFactory::InProgressRequest::OnBeforeSendHeaders(
 
 void ProxyingURLLoaderFactory::InProgressRequest::OnHeadersReceived(
     const std::string& headers,
-    const net::IPEndPoint& endpoint,
+    const net::IPEndPoint& remote_endpoint,
     OnHeadersReceivedCallback callback) {
   if (!current_request_uses_header_client_) {
     std::move(callback).Run(net::OK, base::nullopt, GURL());
@@ -314,6 +309,7 @@ void ProxyingURLLoaderFactory::InProgressRequest::OnHeadersReceived(
   current_response_ = network::mojom::URLResponseHead::New();
   current_response_->headers =
       base::MakeRefCounted<net::HttpResponseHeaders>(headers);
+  current_response_->remote_endpoint = remote_endpoint;
   HandleResponseOrRedirectHeaders(
       base::BindOnce(&InProgressRequest::ContinueToHandleOverrideHeaders,
                      weak_factory_.GetWeakPtr()));
@@ -519,7 +515,7 @@ void ProxyingURLLoaderFactory::InProgressRequest::ContinueToResponseStarted(
   proxied_client_receiver_.Resume();
 
   factory_->web_request_api()->OnResponseStarted(&info_.value(), request_);
-  target_client_->OnReceiveResponse(std::move(current_response_));
+  target_client_->OnReceiveResponse(current_response_.Clone());
 }
 
 void ProxyingURLLoaderFactory::InProgressRequest::ContinueToBeforeRedirect(
@@ -537,8 +533,7 @@ void ProxyingURLLoaderFactory::InProgressRequest::ContinueToBeforeRedirect(
 
   factory_->web_request_api()->OnBeforeRedirect(&info_.value(), request_,
                                                 redirect_info.new_url);
-  target_client_->OnReceiveRedirect(redirect_info,
-                                    std::move(current_response_));
+  target_client_->OnReceiveRedirect(redirect_info, current_response_.Clone());
   request_.url = redirect_info.new_url;
   request_.method = redirect_info.new_method;
   request_.site_for_cookies = redirect_info.new_site_for_cookies;
@@ -673,6 +668,8 @@ ProxyingURLLoaderFactory::ProxyingURLLoaderFactory(
     const HandlersMap& intercepted_handlers,
     content::BrowserContext* browser_context,
     int render_process_id,
+    uint64_t* request_id_generator,
+    std::unique_ptr<extensions::ExtensionNavigationUIData> navigation_ui_data,
     base::Optional<int64_t> navigation_id,
     network::mojom::URLLoaderFactoryRequest loader_request,
     mojo::PendingRemote<network::mojom::URLLoaderFactory> target_factory_remote,
@@ -683,6 +680,8 @@ ProxyingURLLoaderFactory::ProxyingURLLoaderFactory(
       intercepted_handlers_(intercepted_handlers),
       browser_context_(browser_context),
       render_process_id_(render_process_id),
+      request_id_generator_(request_id_generator),
+      navigation_ui_data_(std::move(navigation_ui_data)),
       navigation_id_(std::move(navigation_id)),
       loader_factory_type_(loader_factory_type) {
   target_factory_.Bind(std::move(target_factory_remote));
@@ -733,7 +732,7 @@ void ProxyingURLLoaderFactory::CreateLoaderAndStart(
   if (it != intercepted_handlers_.end()) {
     // <scheme, <type, handler>>
     it->second.second.Run(
-        request, base::BindOnce(&AtomURLLoaderFactory::StartLoading,
+        request, base::BindOnce(&ElectronURLLoaderFactory::StartLoading,
                                 std::move(loader), routing_id, request_id,
                                 options, request, std::move(client),
                                 traffic_annotation, this, it->second.first));
@@ -759,7 +758,7 @@ void ProxyingURLLoaderFactory::CreateLoaderAndStart(
   // per-BrowserContext so extensions can make sense of it.  Note that
   // |network_service_request_id_| by contrast is not necessarily unique, so we
   // don't use it for identity here.
-  const uint64_t web_request_id = ++g_request_id;
+  const uint64_t web_request_id = ++(*request_id_generator_);
 
   // Notes: Chromium assumes that requests with zero-ID would never use the
   // "extraHeaders" code path, however in Electron requests started from

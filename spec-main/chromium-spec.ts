@@ -697,6 +697,21 @@ describe('chromium features', () => {
       expect(labels.some((l: any) => l)).to.be.false()
     })
 
+    it('returns the same device ids across reloads', async () => {
+      const ses = session.fromPartition('persist:media-device-id')
+      const w = new BrowserWindow({
+        show: false,
+        webPreferences: {
+          nodeIntegration: true,
+          session: ses
+        }
+      })
+      w.loadFile(path.join(fixturesPath, 'pages', 'media-id-reset.html'))
+      const [, firstDeviceIds] = await emittedOnce(ipcMain, 'deviceIds')
+      const [, secondDeviceIds] = await emittedOnce(ipcMain, 'deviceIds', () => w.webContents.reload())
+      expect(firstDeviceIds).to.deep.equal(secondDeviceIds)
+    })
+
     it('can return new device id when cookie storage is cleared', async () => {
       const ses = session.fromPartition('persist:media-device-id')
       const w = new BrowserWindow({
@@ -709,8 +724,7 @@ describe('chromium features', () => {
       w.loadFile(path.join(fixturesPath, 'pages', 'media-id-reset.html'))
       const [, firstDeviceIds] = await emittedOnce(ipcMain, 'deviceIds')
       await ses.clearStorageData({ storages: ['cookies'] })
-      w.webContents.reload()
-      const [, secondDeviceIds] = await emittedOnce(ipcMain, 'deviceIds')
+      const [, secondDeviceIds] = await emittedOnce(ipcMain, 'deviceIds', () => w.webContents.reload())
       expect(firstDeviceIds).to.not.deep.equal(secondDeviceIds)
     })
   })
@@ -768,23 +782,28 @@ describe('chromium features', () => {
     afterEach(closeAllWindows)
 
     describe('when opened from main window', () => {
-      for (const {parent, child, nodeIntegration, nativeWindowOpen, openerAccessible} of table) {
-        const description = `when parent=${s(parent)} opens child=${s(child)} with nodeIntegration=${nodeIntegration} nativeWindowOpen=${nativeWindowOpen}, child should ${openerAccessible ? '' : 'not '}be able to access opener`
-        it(description, async () => {
-          const w = new BrowserWindow({show: false, webPreferences: { nodeIntegration: true, nativeWindowOpen }})
-          await w.loadURL(parent)
-          const childOpenerLocation = await w.webContents.executeJavaScript(`new Promise(resolve => {
-            window.addEventListener('message', function f(e) {
-              resolve(e.data)
+      for (const { parent, child, nodeIntegration, nativeWindowOpen, openerAccessible } of table) {
+        for (const sandboxPopup of [false, true]) {
+          const description = `when parent=${s(parent)} opens child=${s(child)} with nodeIntegration=${nodeIntegration} nativeWindowOpen=${nativeWindowOpen} sandboxPopup=${sandboxPopup}, child should ${openerAccessible ? '' : 'not '}be able to access opener`
+          it(description, async () => {
+            const w = new BrowserWindow({show: false, webPreferences: { nodeIntegration: true, nativeWindowOpen }})
+            w.webContents.once('new-window', (e, url, frameName, disposition, options) => {
+              options!.webPreferences!.sandbox = sandboxPopup
             })
-            window.open(${JSON.stringify(child)}, "", "show=no,nodeIntegration=${nodeIntegration ? "yes" : "no"}")
-          })`)
-          if (openerAccessible) {
-            expect(childOpenerLocation).to.be.a('string')
-          } else {
-            expect(childOpenerLocation).to.be.null()
-          }
-        })
+            await w.loadURL(parent)
+            const childOpenerLocation = await w.webContents.executeJavaScript(`new Promise(resolve => {
+              window.addEventListener('message', function f(e) {
+                resolve(e.data)
+              })
+              window.open(${JSON.stringify(child)}, "", "show=no,nodeIntegration=${nodeIntegration ? "yes" : "no"}")
+            })`)
+            if (openerAccessible) {
+              expect(childOpenerLocation).to.be.a('string')
+            } else {
+              expect(childOpenerLocation).to.be.null()
+            }
+          })
+        }
       }
     })
 

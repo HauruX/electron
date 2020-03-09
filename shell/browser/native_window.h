@@ -44,7 +44,7 @@ class PersistentDictionary;
 
 namespace electron {
 
-class AtomMenuModel;
+class ElectronMenuModel;
 class NativeBrowserView;
 
 #if defined(OS_MACOSX)
@@ -160,7 +160,7 @@ class NativeWindow : public base::SupportsUserData,
   virtual void SetIgnoreMouseEvents(bool ignore, bool forward) = 0;
   virtual void SetContentProtection(bool enable) = 0;
   virtual void SetFocusable(bool focusable);
-  virtual void SetMenu(AtomMenuModel* menu);
+  virtual void SetMenu(ElectronMenuModel* menu);
   virtual void SetParentWindow(NativeWindow* parent);
   virtual void AddBrowserView(NativeBrowserView* browser_view) = 0;
   virtual void RemoveBrowserView(NativeBrowserView* browser_view) = 0;
@@ -193,6 +193,12 @@ class NativeWindow : public base::SupportsUserData,
 
   // Vibrancy API
   virtual void SetVibrancy(const std::string& type);
+
+  // Traffic Light API
+#if defined(OS_MACOSX)
+  virtual void SetTrafficLightPosition(const gfx::Point& position) = 0;
+  virtual gfx::Point GetTrafficLightPosition() const = 0;
+#endif
 
   // Touchbar API
   virtual void SetTouchBar(
